@@ -1,0 +1,129 @@
+<project name="project_name" default="clean" basedir=".">
+<!-- task definition for cycle --> 
+<taskdef resource="net/sf/antcontrib/antlib.xml"/>
+    <description>
+		barcamp demo app
+    </description>
+
+  <!-- options from properties file -->
+  <!-- ${ws} is in Hudson $WORKSPACE -->
+  <echo message="reading properties from: ${ws}/etc/build.properties" />	
+  <echo message="module name ${modulename}" />	
+  <property file="${ws}/etc/build.properties"/>
+  <!-- options from .spec file -->
+  <property name="spec_file" value="/etc/${modulename}.spec" />
+  <!--  make unique rpm_build_root, solve problems with branches -->
+  <exec executable="mktemp" outputproperty="rpm_build_root">
+    <arg value="-d" />
+    <arg value="-t" />
+    <arg value="${modulename}.XXXXXXXXXX" />
+  </exec>    
+  <echo message="RPM Build root set to: ${rpm_build_root}" />
+  <!-- set global properties for this build -->
+  <property name="build" location="${rpm_build_root}/BUILD"/>
+  <property name="rpms" location="${rpm_build_root}/RPMS"/>
+  
+ <target name="init">
+    <!-- Create the time stamp -->
+    <tstamp/>
+    <!-- Create the build directory structure used by compile -->
+    <mkdir dir="${build}"/>  
+    <mkdir dir="${rpms}/i386"/>
+  </target>
+
+ <target name="gitrevision" unless="REV" depends="init">
+   <exec executable="git" output="${rpm_build_root}/gitinfo">
+     <arg value="rev-list"/>
+     <arg value="--all"/>      
+   </exec>
+   <exec executable="wc" output="${rpm_build_root}/wcinfo">
+     <arg value="-l" />
+     <arg value="${rpm_build_root}/gitinfo" />
+   </exec>
+   <exec executable="awk" outputproperty="REV">
+     <arg value="{ print $1 }"/>
+     <arg value="${rpm_build_root}/wcinfo"/>
+   </exec>
+   <echo message="REV: ${REV}" />
+ </target>
+ 
+ <target name="gitexport" depends="gitrevision">
+  <mkdir dir="${build}/${modulename}-${REV}" />	
+  <copy todir="${build}/${modulename}-${REV}">
+    <fileset dir="../">
+      <exclude name="../.git/*"/>
+    </fileset>
+  </copy>
+   <echo message="Coping files ..." />
+ </target>
+
+
+ <!-- take spec files  -->
+ <target name="spec" depends="gitexport">
+        <!-- get spec files -->
+        <path id="spec.files">
+            <fileset  dir="${build}/${modulename}-${REV}/etc">
+                <include name="*.spec"/>
+            </fileset>
+        </path>
+        <!-- convert slashes to unix (necessary for Win) -->
+        <pathconvert pathsep="," targetos="unix" property="files" refid="spec.files"/>
+        
+        <echo message="Call RPM" />
+        <!-- Call RPM for all spec files (task for need antcontrib -->
+        <for list="${files}" param="item">
+        <sequential>
+            <antcall target="replace">
+                <param name="spec_file" value="@{item}"/>
+            </antcall>
+            <antcall target="rpm">
+                <param name="spec_file" value="@{item}"/>
+            </antcall>
+        </sequential>
+        </for>
+         
+ </target>
+        
+        
+  <!-- replace tokens in spec files -->
+  <target name="replace">
+    <replace file="${spec_file}" token="@@CURRENT@@" value="${major_version}-${REV}"/>
+    <replace file="${spec_file}" token="@@TOPDIR@@" value="${rpm_build_root}"/>
+    <replace file="${spec_file}" token="${VERSION}" value="${REV}"/>
+    <replace file="${spec_file}" token="${FILENAME}" value="${modulename}"/>
+    <basename property="spec.filename" file="${spec_file}" suffix=".spec" />
+    <echo message="${spec.filename}" />
+    <replace file="${spec_file}" token="@@PACKAGE_NAME@@" value="${spec.filename}"/>
+    <replace file="${spec_file}" token="@@VERSION@@" value="${major_version}"/>
+    <replace file="${spec_file}" token="@@BUILD@@" value="${REV}"/>
+    <replace file="${spec_file}" token="@@BUILDROOT@@" value="${rpm_build_root}-${spec.filename}/" />
+    <replace file="${spec_file}" token="@" value=""/>
+  </target>
+
+
+ <!-- rpmbuild  --> 
+ <target name="rpm">
+   <echo message="SPEC: ${spec_file}" />
+   <exec executable="rpmbuild">
+      <arg value="--target=i386"/>
+      <arg value="-bb"/>
+      <arg value="${spec_file}"/>
+   </exec>
+
+ </target>
+ 
+  <!-- copy RPM files to TOP_DIR and delete tmp dirs -->
+  <target name="clean" depends="spec">
+    <delete dir="${target_path}" />
+    <mkdir dir="${target_path}" />    
+    <copy todir="${target_path}">
+        <fileset  dir="${rpms}/i386/">
+        <include name="*.rpm"/>
+    </fileset>
+    </copy>
+    <!-- Delete the ${build} directory trees -->
+    <delete dir="${rpm_build_root}"/>
+    <echo message="Delete build root: ${rpm_build_root}" />
+  </target>
+
+</project>
