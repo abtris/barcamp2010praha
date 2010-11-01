@@ -114,16 +114,10 @@
  
   <!-- copy RPM files to TOP_DIR and delete tmp dirs -->
   <target name="clean" depends="spec">
-    <delete dir="${target_path}" />
-    <mkdir dir="${target_path}" />    
     <copy todir="${target_path}">
         <fileset  dir="${rpms}/i386/">
         <include name="*.rpm"/>
     </fileset>
-    </copy>
-    <!-- Delete the ${build} directory trees -->
-    <delete dir="${rpm_build_root}"/>
-    <echo message="Delete build root: ${rpm_build_root}" />
-  </target>
+    </copy>  </target>
 
 </project>
